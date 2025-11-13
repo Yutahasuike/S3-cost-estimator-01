@@ -36,7 +36,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const endpoint = import.meta.env.VITE_API_ENDPOINT as string | undefined;
+const endpoint = import.meta.env.VITE_S3_API_ENDPOINT as string | undefined;
 
   const calculateCost = async () => {
     setError(null);
