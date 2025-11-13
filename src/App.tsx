@@ -2,168 +2,41 @@
 import { useState } from "react";
 import "./App.css";
 
-type GlacierClass = "GLACIER" | "DEEP_ARCHIVE";
-type RetrievalTier = "Standard" | "Bulk";
-
-type S3Inputs = {
-  location: string;
-  storageGB: {
-    GLACIER: number;
-    DEEP_ARCHIVE: number;
-  };
-  requests: {
-    PUT: number;
-    GET: number;
-  };
-  dataTransferOutGB: number;
-  glacierRetrieval: {
-    class: GlacierClass;
-    tier: RetrievalTier;
-    retrievalGB: number;
-    requests: number;
-  };
-  earlyDeletion: {
-    class: GlacierClass;
-    gb: number;
-    actualDaysStored: number;
-  };
-  fetchFx: boolean;
+type FormState = {
+  storageGB: number;         // S3 Standard ストレージ容量（GB / 月）
+  uploadRequests: number;    // アップロード（書き込み）回数 / 月
+  downloadRequests: number;  // ダウンロード（読み取り）回数 / 月
+  dataTransferGB: number;    // インターネット向けデータ転送量（GB / 月）
+  fetchFx: boolean;          // 為替レートをオンライン取得するか
 };
 
-const defaultInputs: S3Inputs = {
-  location: "Asia Pacific (Tokyo)",
-  storageGB: {
-    GLACIER: 1000,
-    DEEP_ARCHIVE: 2000,
-  },
-  requests: {
-    PUT: 20000,
-    GET: 1500000,
-  },
-  dataTransferOutGB: 300,
-  glacierRetrieval: {
-    class: "DEEP_ARCHIVE",
-    tier: "Standard",
-    retrievalGB: 250,
-    requests: 1200,
-  },
-  earlyDeletion: {
-    class: "DEEP_ARCHIVE",
-    gb: 500,
-    actualDaysStored: 30,
-  },
+const defaultForm: FormState = {
+  storageGB: 1000,
+  uploadRequests: 20000,
+  downloadRequests: 1500000,
+  dataTransferGB: 300,
   fetchFx: true,
 };
 
+// Amplify の環境変数（設定済みのものをそのまま使用）
 const API_ENDPOINT = import.meta.env.VITE_S3_API_ENDPOINT as string;
 
 function App() {
-  const [form, setForm] = useState<S3Inputs>(defaultInputs);
+  const [form, setForm] = useState<FormState>(defaultForm);
   const [result, setResult] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ---- 入力用ハンドラ（checked 問題が出ないよう全部分ける） ----
-  const handleStorageChange =
-    (klass: GlacierClass) =>
+  // 共通の number 用ハンドラ
+  const handleNumberChange =
+    (field: keyof Omit<FormState, "fetchFx">) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(e.target.value) || 0;
+      const value = Number(e.target.value);
       setForm((prev) => ({
         ...prev,
-        storageGB: {
-          ...prev.storageGB,
-          [klass]: value,
-        },
+        [field]: isNaN(value) ? 0 : value,
       }));
     };
-
-  const handleRequestChange =
-    (kind: "PUT" | "GET") =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(e.target.value) || 0;
-      setForm((prev) => ({
-        ...prev,
-        requests: {
-          ...prev.requests,
-          [kind]: value,
-        },
-      }));
-    };
-
-  const handleNumberField =
-    (field: "dataTransferOutGB") =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(e.target.value) || 0;
-      setForm((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
-    };
-
-  const handleRetrievalNumber =
-    (field: "retrievalGB" | "requests") =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(e.target.value) || 0;
-      setForm((prev) => ({
-        ...prev,
-        glacierRetrieval: {
-          ...prev.glacierRetrieval,
-          [field]: value,
-        },
-      }));
-    };
-
-  const handleEarlyDeletionNumber =
-    (field: "gb" | "actualDaysStored") =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(e.target.value) || 0;
-      setForm((prev) => ({
-        ...prev,
-        earlyDeletion: {
-          ...prev.earlyDeletion,
-          [field]: value,
-        },
-      }));
-    };
-
-  const handleRetrievalClassChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    const value = e.target.value as GlacierClass;
-    setForm((prev) => ({
-      ...prev,
-      glacierRetrieval: {
-        ...prev.glacierRetrieval,
-        class: value,
-      },
-    }));
-  };
-
-  const handleRetrievalTierChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    const value = e.target.value as RetrievalTier;
-    setForm((prev) => ({
-      ...prev,
-      glacierRetrieval: {
-        ...prev.glacierRetrieval,
-        tier: value,
-      },
-    }));
-  };
-
-  const handleEarlyDeletionClassChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    const value = e.target.value as GlacierClass;
-    setForm((prev) => ({
-      ...prev,
-      earlyDeletion: {
-        ...prev.earlyDeletion,
-        class: value,
-      },
-    }));
-  };
 
   const handleFetchFxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({
@@ -172,7 +45,6 @@ function App() {
     }));
   };
 
-  // ---- 送信 ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -183,12 +55,20 @@ function App() {
       return;
     }
 
+    const payload = {
+      storageGB: form.storageGB,
+      putRequests: form.uploadRequests,
+      getRequests: form.downloadRequests,
+      dataTransferGB: form.dataTransferGB,
+      fetchFx: form.fetchFx,
+    };
+
     setLoading(true);
     try {
       const resp = await fetch(API_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: form }),
+        body: JSON.stringify(payload),
       });
 
       if (!resp.ok) {
@@ -208,158 +88,105 @@ function App() {
     }
   };
 
-  const totals = result?.pickedUnitPricesUSD?.totals;
+  const monthlyUSD = result?.monthlyTotalUSD;
+  const monthlyJPY = result?.monthlyTotalJPY;
+  const fxRate = result?.fx?.USD_JPY;
+  const breakdown = result?.breakdown || result?.totals;
 
   return (
     <div className="app-root">
-      <h1 className="app-title">S3 コスト見積もりツール</h1>
+      <h1 className="app-title">S3 Standard コスト見積もりツール</h1>
 
       <form className="card" onSubmit={handleSubmit}>
         <div className="field-group">
           <label>リージョン</label>
-          <div>ap-northeast-1（東京） / {form.location}</div>
+          <div>ap-northeast-1（東京）</div>
         </div>
 
         <hr />
 
+        {/* ① ストレージ容量 */}
         <h2 className="section-title">① ストレージ容量（GB / 月）</h2>
         <div className="field-row">
-          <label>S3 Glacier Flexible Retrieval（GLACIER）</label>
+          <label>
+            S3 Standard に保存するデータ量（GB）
+            <div className="field-help">
+              例：1TB 保存する場合は「1000」と入力します。
+            </div>
+          </label>
           <input
             type="number"
             min={0}
-            value={form.storageGB.GLACIER}
-            onChange={handleStorageChange("GLACIER")}
-          />
-        </div>
-        <div className="field-row">
-          <label>S3 Glacier Deep Archive（DEEP_ARCHIVE）</label>
-          <input
-            type="number"
-            min={0}
-            value={form.storageGB.DEEP_ARCHIVE}
-            onChange={handleStorageChange("DEEP_ARCHIVE")}
+            value={form.storageGB}
+            onChange={handleNumberChange("storageGB")}
           />
         </div>
 
         <hr />
 
-        <h2 className="section-title">② API リクエスト数（回 / 月）</h2>
+        {/* ② リクエスト数 */}
+        <h2 className="section-title">② リクエスト数（回 / 月）</h2>
         <div className="field-row">
-          <label>PUT / COPY / POST</label>
+          <label>
+            アップロード（書き込み）回数
+            <div className="field-help">
+              ファイルをアップロード・新規保存・コピーした回数です。
+            </div>
+          </label>
           <input
             type="number"
             min={0}
-            value={form.requests.PUT}
-            onChange={handleRequestChange("PUT")}
-          />
-        </div>
-        <div className="field-row">
-          <label>GET / SELECT</label>
-          <input
-            type="number"
-            min={0}
-            value={form.requests.GET}
-            onChange={handleRequestChange("GET")}
+            value={form.uploadRequests}
+            onChange={handleNumberChange("uploadRequests")}
           />
         </div>
 
-        <hr />
-
-        <h2 className="section-title">③ データ転送量</h2>
         <div className="field-row">
-          <label>インターネット向け転送量（GB / 月）</label>
+          <label>
+            ダウンロード（読み取り）回数
+            <div className="field-help">
+              ファイルのダウンロードや一覧取得など、S3 から読み取る回数です。
+            </div>
+          </label>
           <input
             type="number"
             min={0}
-            value={form.dataTransferOutGB}
-            onChange={handleNumberField("dataTransferOutGB")}
-          />
-        </div>
-
-        <hr />
-
-        <h2 className="section-title">④ Glacier からのリストア</h2>
-        <div className="field-row">
-          <label>ストレージクラス</label>
-          <select
-            value={form.glacierRetrieval.class}
-            onChange={handleRetrievalClassChange}
-          >
-            <option value="GLACIER">GLACIER（Flexible Retrieval）</option>
-            <option value="DEEP_ARCHIVE">DEEP_ARCHIVE</option>
-          </select>
-        </div>
-        <div className="field-row">
-          <label>リストア Tier</label>
-          <select
-            value={form.glacierRetrieval.tier}
-            onChange={handleRetrievalTierChange}
-          >
-            <option value="Standard">Standard</option>
-            <option value="Bulk">Bulk</option>
-          </select>
-        </div>
-        <div className="field-row">
-          <label>リストア容量（GB）</label>
-          <input
-            type="number"
-            min={0}
-            value={form.glacierRetrieval.retrievalGB}
-            onChange={handleRetrievalNumber("retrievalGB")}
-          />
-        </div>
-        <div className="field-row">
-          <label>リストアリクエスト数（回）</label>
-          <input
-            type="number"
-            min={0}
-            value={form.glacierRetrieval.requests}
-            onChange={handleRetrievalNumber("requests")}
+            value={form.downloadRequests}
+            onChange={handleNumberChange("downloadRequests")}
           />
         </div>
 
         <hr />
 
-        <h2 className="section-title">⑤ 早期削除（最低保持期間前に削除）</h2>
+        {/* ③ データ転送量 */}
+        <h2 className="section-title">③ データ転送量（GB / 月）</h2>
         <div className="field-row">
-          <label>クラス</label>
-          <select
-            value={form.earlyDeletion.class}
-            onChange={handleEarlyDeletionClassChange}
-          >
-            <option value="GLACIER">GLACIER</option>
-            <option value="DEEP_ARCHIVE">DEEP_ARCHIVE</option>
-          </select>
-        </div>
-        <div className="field-row">
-          <label>削除対象容量（GB）</label>
+          <label>
+            インターネット向けデータ転送量（GB）
+            <div className="field-help">
+              インターネットや別リージョンへ出ていく転送量です。
+              {" "}
+              同じリージョン内の転送は無料なので含めなくてOKです。
+            </div>
+          </label>
           <input
             type="number"
             min={0}
-            value={form.earlyDeletion.gb}
-            onChange={handleEarlyDeletionNumber("gb")}
-          />
-        </div>
-        <div className="field-row">
-          <label>実際に保存していた日数</label>
-          <input
-            type="number"
-            min={0}
-            value={form.earlyDeletion.actualDaysStored}
-            onChange={handleEarlyDeletionNumber("actualDaysStored")}
+            value={form.dataTransferGB}
+            onChange={handleNumberChange("dataTransferGB")}
           />
         </div>
 
         <hr />
 
+        {/* オプション：為替レート */}
         <div className="field-row">
           <label>
             <input
               type="checkbox"
               checked={form.fetchFx}
               onChange={handleFetchFxChange}
-            />
+            />{" "}
             為替レート（USD → JPY）をオンライン取得する
           </label>
         </div>
@@ -371,34 +198,43 @@ function App() {
         </button>
       </form>
 
+      {/* 結果表示 */}
       {result && (
         <div className="card result-card">
           <h2 className="section-title">結果</h2>
 
-          <p>
-            <strong>為替レート:</strong>{" "}
-            {result.fx?.USD_JPY?.toFixed
-              ? result.fx.USD_JPY.toFixed(3)
-              : result.fx?.USD_JPY}{" "}
-            円 / USD
-          </p>
+          {fxRate && (
+            <p>
+              <strong>為替レート:</strong>{" "}
+              {typeof fxRate === "number" ? fxRate.toFixed(3) : fxRate} 円 / USD
+            </p>
+          )}
 
-          <p>
-            <strong>合計（月額・USD）:</strong> {result.monthlyTotalUSD}
-          </p>
-          <p>
-            <strong>合計（月額・JPY）:</strong> {result.monthlyTotalJPY} 円
-          </p>
+          {monthlyUSD && (
+            <p>
+              <strong>合計（月額・USD）:</strong> {monthlyUSD}
+            </p>
+          )}
 
-          {totals && (
+          {monthlyJPY && (
+            <p>
+              <strong>合計（月額・JPY）:</strong> {monthlyJPY} 円
+            </p>
+          )}
+
+          {breakdown && (
             <>
-              <h3 className="section-subtitle">内訳（USD）</h3>
+              <h3 className="section-subtitle">内訳（USD の目安）</h3>
               <ul className="totals-list">
-                <li>ストレージ: {totals.storage_USD}</li>
-                <li>リクエスト: {totals.requests_USD}</li>
-                <li>転送量: {totals.dataTransferOut_USD}</li>
-                <li>リストア: {totals.glacierRetrieval_USD}</li>
-                <li>早期削除ペナルティ: {totals.earlyDeletionPenalty_USD}</li>
+                {"storageUSD" in breakdown && (
+                  <li>ストレージ: {breakdown.storageUSD}</li>
+                )}
+                {"requestsUSD" in breakdown && (
+                  <li>リクエスト: {breakdown.requestsUSD}</li>
+                )}
+                {"transferUSD" in breakdown && (
+                  <li>データ転送: {breakdown.transferUSD}</li>
+                )}
               </ul>
             </>
           )}
