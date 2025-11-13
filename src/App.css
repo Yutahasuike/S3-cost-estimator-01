@@ -1,178 +1,102 @@
-/* 画面全体の背景 */
+/* --- 全体背景 --- */
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
-  background: linear-gradient(180deg, #8e72ff 0%, #c48bff 40%, #f5d5ff 100%);
-  color: #222;
+  padding: 0;
+  font-family: "Noto Sans JP", sans-serif;
+  background: linear-gradient(180deg, #c3b2ff 0%, #8e5cf7 100%);
+  background-attachment: fixed;
 }
 
-/* ルートコンテナ */
-.app-root {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 32px 16px 64px;
-}
-
-/* タイトル */
-.app-title {
-  text-align: center;
-  font-size: 32px;
-  margin-bottom: 24px;
-  letter-spacing: 0.04em;
-}
-
-/* 共通カード */
-.card {
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 16px;
-  padding: 24px 28px 28px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
-  margin-bottom: 24px;
-}
-
-/* 結果カードは少し余白を多めに */
-.result-card {
-  margin-top: 16px;
-}
-
-/* セクション見出し */
-.section-title {
-  font-size: 20px;
-  margin: 16px 0 12px;
-  padding-top: 12px;
-  border-top: 2px solid #ddd;
-}
-
-/* 小見出し */
-.section-subtitle {
-  font-size: 16px;
-  margin-top: 16px;
-}
-
-/* ラベル＋入力の横並び */
-.field-row {
+/* --- ページコンテナ --- */
+.page-container {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
 }
 
-/* ラベル側（左） */
-.field-row > label {
-  flex: 1;
-  font-weight: 600;
+/* --- メインカード（入力欄） --- */
+.card {
+  width: 100%;
+  max-width: 760px;
+  background: white;
+  border-radius: 14px;
+  padding: 28px 32px;
+  margin-bottom: 32px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
 }
 
-/* 補足説明 */
-.field-help {
-  font-weight: 400;
-  font-size: 12px;
-  color: #555;
-  margin-top: 4px;
-  line-height: 1.5;
+/* --- 結果カード --- */
+.result-card {
+  width: 100%;
+  max-width: 760px;
+  background: white;
+  border-radius: 14px;
+  padding: 24px 28px;
+  margin-bottom: 60px; /* 画面外に行かないように浅めに */
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
 }
 
-/* input */
-.field-row input[type="number"],
-.field-row input[type="text"] {
-  width: 180px;
-  padding: 6px 8px;
-  font-size: 14px;
-  border-radius: 6px;
-  border: 1px solid #bbb;
-  box-sizing: border-box;
+/* --- セクションタイトル --- */
+.section-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 8px;
 }
 
-/* 単独の項目（リージョン、チェックボックス等） */
-.field-group {
-  margin-bottom: 12px;
-}
-
-/* チェックボックスの行 */
-.field-row input[type="checkbox"] {
-  transform: scale(1.1);
-  margin-right: 6px;
-}
-
-/* 仕切り線 */
-hr {
-  border: none;
-  border-top: 1px dashed #ccc;
-  margin: 18px 0;
-}
-
-/* ボタン */
-.primary-button {
-  margin-top: 12px;
-  padding: 10px 32px;
-  border-radius: 999px;
-  border: none;
-  background: #222;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
-  transition: transform 0.05s ease-out, box-shadow 0.05s ease-out,
-    background 0.1s ease-out;
-}
-
-.primary-button:hover:not(:disabled) {
-  background: #111;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-}
-
-.primary-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* エラーメッセージ */
-.error-box {
-  margin-top: 12px;
+/* --- 入力ラベル --- */
+.label {
+  font-weight: bold;
   margin-bottom: 4px;
-  padding: 8px 10px;
+  display: block;
+}
+
+.input-box {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid #ddd;
   border-radius: 8px;
-  background: #ffe5e5;
-  color: #b00020;
-  font-size: 13px;
 }
 
-/* 結果のリスト */
-.totals-list {
-  list-style: none;
-  padding-left: 0;
-  margin-top: 4px;
+/* --- ボタン --- */
+.calc-button {
+  width: 100%;
+  background: black;
+  color: white;
+  padding: 14px;
+  border-radius: 8px;
+  border: none;
+  margin-top: 20px;
+  cursor: pointer;
+  font-size: 16px;
 }
 
-.totals-list li {
-  margin: 4px 0;
+.calc-button:hover {
+  background: #333;
 }
 
-/* スマホ用レイアウト調整 */
-@media (max-width: 640px) {
-  .app-root {
-    padding: 16px 10px 40px;
+/* --- 内訳ボックス --- */
+.breakdown-box {
+  background: #fafafa;
+  border-left: 6px solid #333;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+}
+
+/* --- モバイル最適化 --- */
+@media (max-width: 600px) {
+  .card, .result-card {
+    padding: 20px;
   }
 
-  .card {
-    padding: 18px 14px 20px;
+  .section-title {
+    font-size: 16px;
   }
 
-  .field-row {
-    flex-direction: column;
-  }
-
-  .field-row input[type="number"],
-  .field-row input[type="text"] {
-    width: 100%;
-  }
-
-  .primary-button {
-    width: 100%;
+  .input-box {
+    font-size: 14px;
+    padding: 10px;
   }
 }
