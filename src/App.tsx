@@ -1,303 +1,407 @@
 // src/App.tsx
 import { useState } from "react";
+import "./App.css";
+
+type GlacierClass = "GLACIER" | "DEEP_ARCHIVE";
+type RetrievalTier = "Standard" | "Bulk";
+
+type S3Inputs = {
+  location: string;
+  storageGB: {
+    GLACIER: number;
+    DEEP_ARCHIVE: number;
+  };
+  requests: {
+    PUT: number;
+    GET: number;
+  };
+  dataTransferOutGB: number;
+  glacierRetrieval: {
+    class: GlacierClass;
+    tier: RetrievalTier;
+    retrievalGB: number;
+    requests: number;
+  };
+  earlyDeletion: {
+    class: GlacierClass;
+    gb: number;
+    actualDaysStored: number;
+  };
+  fetchFx: boolean;
+};
+
+const defaultInputs: S3Inputs = {
+  location: "Asia Pacific (Tokyo)",
+  storageGB: {
+    GLACIER: 1000,
+    DEEP_ARCHIVE: 2000,
+  },
+  requests: {
+    PUT: 20000,
+    GET: 1500000,
+  },
+  dataTransferOutGB: 300,
+  glacierRetrieval: {
+    class: "DEEP_ARCHIVE",
+    tier: "Standard",
+    retrievalGB: 250,
+    requests: 1200,
+  },
+  earlyDeletion: {
+    class: "DEEP_ARCHIVE",
+    gb: 500,
+    actualDaysStored: 30,
+  },
+  fetchFx: true,
+};
 
 const API_ENDPOINT = import.meta.env.VITE_S3_API_ENDPOINT as string;
 
-type ApiResult = {
-  monthlyTotalUSD: string;
-  monthlyTotalJPY: string;
-  pickedUnitPricesUSD: any;
-};
-
 function App() {
-  const [form, setForm] = useState({
-    glacierGB: 1000,
-    deepArchiveGB: 2000,
-    putReq: 20000,
-    getReq: 1500000,
-    doutGB: 300,
-    retrievalClass: "DEEP_ARCHIVE",
-    retrievalTier: "Standard",
-    retrievalGB: 250,
-    retrievalReq: 1200,
-    earlyClass: "DEEP_ARCHIVE",
-    earlyGB: 500,
-    earlyDays: 30,
-    fetchFx: true,
-  });
-
+  const [form, setForm] = useState<S3Inputs>(defaultInputs);
+  const [result, setResult] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ApiResult | null>(null);
 
-  // 入力値変更ハンドラ
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  // ---- 入力用ハンドラ（checked 問題が出ないよう全部分ける） ----
+  const handleStorageChange =
+    (klass: GlacierClass) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Number(e.target.value) || 0;
+      setForm((prev) => ({
+        ...prev,
+        storageGB: {
+          ...prev.storageGB,
+          [klass]: value,
+        },
+      }));
+    };
+
+  const handleRequestChange =
+    (kind: "PUT" | "GET") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Number(e.target.value) || 0;
+      setForm((prev) => ({
+        ...prev,
+        requests: {
+          ...prev.requests,
+          [kind]: value,
+        },
+      }));
+    };
+
+  const handleNumberField =
+    (field: "dataTransferOutGB") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Number(e.target.value) || 0;
+      setForm((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+    };
+
+  const handleRetrievalNumber =
+    (field: "retrievalGB" | "requests") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Number(e.target.value) || 0;
+      setForm((prev) => ({
+        ...prev,
+        glacierRetrieval: {
+          ...prev.glacierRetrieval,
+          [field]: value,
+        },
+      }));
+    };
+
+  const handleEarlyDeletionNumber =
+    (field: "gb" | "actualDaysStored") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Number(e.target.value) || 0;
+      setForm((prev) => ({
+        ...prev,
+        earlyDeletion: {
+          ...prev.earlyDeletion,
+          [field]: value,
+        },
+      }));
+    };
+
+  const handleRetrievalClassChange = (
+    e: React.ChangeEvent<HTMLSelectElement>
   ) => {
-    const { name, value, type, checked } = e.target;
+    const value = e.target.value as GlacierClass;
     setForm((prev) => ({
       ...prev,
-      [name]:
-        type === "checkbox"
-          ? checked
-          : // 数値入力は number に、それ以外(セレクトなど)は文字列のまま
-            (e.target as HTMLInputElement).type === "number"
-          ? Number(value)
-          : value,
+      glacierRetrieval: {
+        ...prev.glacierRetrieval,
+        class: value,
+      },
     }));
   };
 
-  // フォーム送信 → Lambda 呼び出し
+  const handleRetrievalTierChange = (
+    e: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    const value = e.target.value as RetrievalTier;
+    setForm((prev) => ({
+      ...prev,
+      glacierRetrieval: {
+        ...prev.glacierRetrieval,
+        tier: value,
+      },
+    }));
+  };
+
+  const handleEarlyDeletionClassChange = (
+    e: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    const value = e.target.value as GlacierClass;
+    setForm((prev) => ({
+      ...prev,
+      earlyDeletion: {
+        ...prev.earlyDeletion,
+        class: value,
+      },
+    }));
+  };
+
+  const handleFetchFxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((prev) => ({
+      ...prev,
+      fetchFx: e.target.checked,
+    }));
+  };
+
+  // ---- 送信 ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
     setResult(null);
 
-    try {
-      // Lambda 側の inputs と同じ形で payload を作る
-      const payload = {
-        inputs: {
-          location: "Asia Pacific (Tokyo)",
-          storageGB: {
-            GLACIER: form.glacierGB,
-            DEEP_ARCHIVE: form.deepArchiveGB,
-          },
-          requests: {
-            PUT: form.putReq,
-            GET: form.getReq,
-          },
-          dataTransferOutGB: form.doutGB,
-          glacierRetrieval: {
-            class: form.retrievalClass,
-            tier: form.retrievalTier,
-            retrievalGB: form.retrievalGB,
-            requests: form.retrievalReq,
-          },
-          earlyDeletion: {
-            class: form.earlyClass,
-            gb: form.earlyGB,
-            actualDaysStored: form.earlyDays,
-          },
-          fetchFx: form.fetchFx,
-        },
-      };
+    if (!API_ENDPOINT) {
+      setError("VITE_S3_API_ENDPOINT が設定されていません。");
+      return;
+    }
 
-      const res = await fetch(API_ENDPOINT, {
+    setLoading(true);
+    try {
+      const resp = await fetch(API_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ inputs: form }),
       });
 
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(
+          `API error: ${resp.status} ${resp.statusText} - ${text}`
+        );
       }
 
-      const data = await res.json();
+      const data = await resp.json();
       setResult(data);
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "エラーが発生しました");
+      setError(err.message ?? "API 呼び出しに失敗しました。");
     } finally {
       setLoading(false);
     }
   };
 
+  const totals = result?.pickedUnitPricesUSD?.totals;
+
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem" }}>
-      <h1>S3 コールドストレージ自動見積もり</h1>
+    <div className="app-root">
+      <h1 className="app-title">S3 コスト見積もりツール</h1>
 
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
-        {/* ストレージ容量 */}
-        <fieldset>
-          <legend>ストレージ容量（GB）</legend>
-          <label>
-            Glacier (Flexible Retrieval)
-            <input
-              type="number"
-              name="glacierGB"
-              value={form.glacierGB}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-          <br />
-          <label>
-            Glacier Deep Archive
-            <input
-              type="number"
-              name="deepArchiveGB"
-              value={form.deepArchiveGB}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-        </fieldset>
+      <form className="card" onSubmit={handleSubmit}>
+        <div className="field-group">
+          <label>リージョン</label>
+          <div>ap-northeast-1（東京） / {form.location}</div>
+        </div>
 
-        {/* リクエスト数 */}
-        <fieldset>
-          <legend>API リクエスト</legend>
-          <label>
-            PUT / COPY / POST 回数
-            <input
-              type="number"
-              name="putReq"
-              value={form.putReq}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-          <br />
-          <label>
-            GET 回数
-            <input
-              type="number"
-              name="getReq"
-              value={form.getReq}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-        </fieldset>
+        <hr />
 
-        {/* データ転送量 */}
-        <fieldset>
-          <legend>データ転送量</legend>
-          <label>
-            インターネット向け転送 (GB)
-            <input
-              type="number"
-              name="doutGB"
-              value={form.doutGB}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-        </fieldset>
-
-        {/* リストア条件 */}
-        <fieldset>
-          <legend>Glacier からの復元</legend>
-          <label>
-            クラス
-            <select
-              name="retrievalClass"
-              value={form.retrievalClass}
-              onChange={handleChange}
-            >
-              <option value="GLACIER">GLACIER (Flexible Retrieval)</option>
-              <option value="DEEP_ARCHIVE">DEEP_ARCHIVE</option>
-            </select>
-          </label>
-          <br />
-          <label>
-            ティア
-            <select
-              name="retrievalTier"
-              value={form.retrievalTier}
-              onChange={handleChange}
-            >
-              <option value="Standard">Standard</option>
-              <option value="Bulk">Bulk</option>
-              <option value="Expedited">Expedited (GLACIERのみ)</option>
-            </select>
-          </label>
-          <br />
-          <label>
-            復元データ量 (GB)
-            <input
-              type="number"
-              name="retrievalGB"
-              value={form.retrievalGB}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-          <br />
-          <label>
-            復元リクエスト数
-            <input
-              type="number"
-              name="retrievalReq"
-              value={form.retrievalReq}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-        </fieldset>
-
-        {/* 早期削除ペナルティ */}
-        <fieldset>
-          <legend>早期削除</legend>
-          <label>
-            クラス
-            <select
-              name="earlyClass"
-              value={form.earlyClass}
-              onChange={handleChange}
-            >
-              <option value="GLACIER">GLACIER</option>
-              <option value="DEEP_ARCHIVE">DEEP_ARCHIVE</option>
-            </select>
-          </label>
-          <br />
-          <label>
-            削除対象容量 (GB)
-            <input
-              type="number"
-              name="earlyGB"
-              value={form.earlyGB}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-          <br />
-          <label>
-            実際に保存した日数
-            <input
-              type="number"
-              name="earlyDays"
-              value={form.earlyDays}
-              onChange={handleChange}
-              min={0}
-            />
-          </label>
-        </fieldset>
-
-        {/* 為替 */}
-        <label>
-          為替レートをオンライン取得する
+        <h2 className="section-title">① ストレージ容量（GB / 月）</h2>
+        <div className="field-row">
+          <label>S3 Glacier Flexible Retrieval（GLACIER）</label>
           <input
-            type="checkbox"
-            name="fetchFx"
-            checked={form.fetchFx}
-            onChange={handleChange}
+            type="number"
+            min={0}
+            value={form.storageGB.GLACIER}
+            onChange={handleStorageChange("GLACIER")}
           />
-        </label>
+        </div>
+        <div className="field-row">
+          <label>S3 Glacier Deep Archive（DEEP_ARCHIVE）</label>
+          <input
+            type="number"
+            min={0}
+            value={form.storageGB.DEEP_ARCHIVE}
+            onChange={handleStorageChange("DEEP_ARCHIVE")}
+          />
+        </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "試算中..." : "見積もり実行"}
+        <hr />
+
+        <h2 className="section-title">② API リクエスト数（回 / 月）</h2>
+        <div className="field-row">
+          <label>PUT / COPY / POST</label>
+          <input
+            type="number"
+            min={0}
+            value={form.requests.PUT}
+            onChange={handleRequestChange("PUT")}
+          />
+        </div>
+        <div className="field-row">
+          <label>GET / SELECT</label>
+          <input
+            type="number"
+            min={0}
+            value={form.requests.GET}
+            onChange={handleRequestChange("GET")}
+          />
+        </div>
+
+        <hr />
+
+        <h2 className="section-title">③ データ転送量</h2>
+        <div className="field-row">
+          <label>インターネット向け転送量（GB / 月）</label>
+          <input
+            type="number"
+            min={0}
+            value={form.dataTransferOutGB}
+            onChange={handleNumberField("dataTransferOutGB")}
+          />
+        </div>
+
+        <hr />
+
+        <h2 className="section-title">④ Glacier からのリストア</h2>
+        <div className="field-row">
+          <label>ストレージクラス</label>
+          <select
+            value={form.glacierRetrieval.class}
+            onChange={handleRetrievalClassChange}
+          >
+            <option value="GLACIER">GLACIER（Flexible Retrieval）</option>
+            <option value="DEEP_ARCHIVE">DEEP_ARCHIVE</option>
+          </select>
+        </div>
+        <div className="field-row">
+          <label>リストア Tier</label>
+          <select
+            value={form.glacierRetrieval.tier}
+            onChange={handleRetrievalTierChange}
+          >
+            <option value="Standard">Standard</option>
+            <option value="Bulk">Bulk</option>
+          </select>
+        </div>
+        <div className="field-row">
+          <label>リストア容量（GB）</label>
+          <input
+            type="number"
+            min={0}
+            value={form.glacierRetrieval.retrievalGB}
+            onChange={handleRetrievalNumber("retrievalGB")}
+          />
+        </div>
+        <div className="field-row">
+          <label>リストアリクエスト数（回）</label>
+          <input
+            type="number"
+            min={0}
+            value={form.glacierRetrieval.requests}
+            onChange={handleRetrievalNumber("requests")}
+          />
+        </div>
+
+        <hr />
+
+        <h2 className="section-title">⑤ 早期削除（最低保持期間前に削除）</h2>
+        <div className="field-row">
+          <label>クラス</label>
+          <select
+            value={form.earlyDeletion.class}
+            onChange={handleEarlyDeletionClassChange}
+          >
+            <option value="GLACIER">GLACIER</option>
+            <option value="DEEP_ARCHIVE">DEEP_ARCHIVE</option>
+          </select>
+        </div>
+        <div className="field-row">
+          <label>削除対象容量（GB）</label>
+          <input
+            type="number"
+            min={0}
+            value={form.earlyDeletion.gb}
+            onChange={handleEarlyDeletionNumber("gb")}
+          />
+        </div>
+        <div className="field-row">
+          <label>実際に保存していた日数</label>
+          <input
+            type="number"
+            min={0}
+            value={form.earlyDeletion.actualDaysStored}
+            onChange={handleEarlyDeletionNumber("actualDaysStored")}
+          />
+        </div>
+
+        <hr />
+
+        <div className="field-row">
+          <label>
+            <input
+              type="checkbox"
+              checked={form.fetchFx}
+              onChange={handleFetchFxChange}
+            />
+            為替レート（USD → JPY）をオンライン取得する
+          </label>
+        </div>
+
+        {error && <div className="error-box">エラー: {error}</div>}
+
+        <button className="primary-button" type="submit" disabled={loading}>
+          {loading ? "計算中..." : "コストを計算"}
         </button>
       </form>
 
-      {/* エラー表示 */}
-      {error && (
-        <p style={{ color: "red", marginTop: "1rem" }}>エラー: {error}</p>
-      )}
-
-      {/* 結果表示 */}
       {result && (
-        <div style={{ marginTop: "2rem" }}>
-          <h2>見積もり結果</h2>
-          <p>月額合計（USD）: {result.monthlyTotalUSD}</p>
-          <p>月額合計（JPY）: {result.monthlyTotalJPY}</p>
+        <div className="card result-card">
+          <h2 className="section-title">結果</h2>
 
-          <details>
-            <summary>詳細（JSON）</summary>
-            <pre style={{ whiteSpace: "pre-wrap" }}>
-              {JSON.stringify(result.pickedUnitPricesUSD, null, 2)}
-            </pre>
-          </details>
+          <p>
+            <strong>為替レート:</strong>{" "}
+            {result.fx?.USD_JPY?.toFixed
+              ? result.fx.USD_JPY.toFixed(3)
+              : result.fx?.USD_JPY}{" "}
+            円 / USD
+          </p>
+
+          <p>
+            <strong>合計（月額・USD）:</strong> {result.monthlyTotalUSD}
+          </p>
+          <p>
+            <strong>合計（月額・JPY）:</strong> {result.monthlyTotalJPY} 円
+          </p>
+
+          {totals && (
+            <>
+              <h3 className="section-subtitle">内訳（USD）</h3>
+              <ul className="totals-list">
+                <li>ストレージ: {totals.storage_USD}</li>
+                <li>リクエスト: {totals.requests_USD}</li>
+                <li>転送量: {totals.dataTransferOut_USD}</li>
+                <li>リストア: {totals.glacierRetrieval_USD}</li>
+                <li>早期削除ペナルティ: {totals.earlyDeletionPenalty_USD}</li>
+              </ul>
+            </>
+          )}
         </div>
       )}
     </div>
